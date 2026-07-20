@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shindaai - Voice AI Assistant</title>
+  <link rel="shortcut icon" href="./assets/512x512.png" type="image/x-icon">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="./index.css">
+<script>navigator.serviceWorker.register("service-worker.js")</script> 
+        <link rel="manifest" href="./manifest.json">
+</head>
+<body>
+  <div class="container">
+    <div class="app-card">
+      <nav class="nav-tabs">
+        <button class="tab-btn active" id="tabChatBtn">💬 Assistant</button>
+        <button class="tab-btn" id="tabSettingsBtn">⚙️ Settings</button>
+      </nav>
+
+      <section class="screen active" id="chatScreen">
+        <div class="headings-container">
+          <h1>🎙️ Voice AI Assistant</h1>
+          <p>Click to speak, and the assistant will converse with you</p>
+        </div>
+
+        <div class="status-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Ready</span>
+        </div>
+
+        <textarea id="textToConvert" class="text-control" placeholder="Your conversation will appear here..." readonly></textarea>
+        
+        <div class="error-para" id="chatError"></div>
+
+        <div class="btn-group">
+          <button class="btn" id="micBtn">🎤 Start Listening</button>
+          <button class="btn btn-stop" id="stopBtn" style="display: none;">⏹️ Stop</button>
+        </div>
+      </section>
+
+      <section class="screen" id="settingsScreen">
+        <div class="headings-container">
+          <h1>⚙️ Settings</h1>
+          <p>Manage API keys & theme preferences</p>
+        </div>
+
+        <div class="input-group">
+          <label for="newApiKey">🔑 Add OpenRouter API Key</label>
+          <div class="input-row">
+            <input type="password" id="newApiKey" class="text-input" placeholder="sk-or-v1-..." />
+            <button class="btn" id="addKeyBtn" style="width: auto; padding: 0 1rem;">➕ Add</button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>💾 Stored Keys (Select active key or fallback)</label>
+          <div class="keys-list" id="keysList"></div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="input-group">
+          <label>🎨 Theme Color Accent</label>
+          <div class="color-picker-row">
+            <input type="color" id="themePicker" class="color-picker-input" value="#f4244c" />
+            <button class="btn btn-secondary" id="resetThemeBtn" style="width: auto; padding: 0.5rem 1rem;">🔄 Reset</button>
+          </div>
+        </div>
+
+        <div class="error-para" id="settingsError"></div>
+      </section>
+    </div>
+  </div>
+
+  <script src="./index.js"></script>
+</body>
+</html>
