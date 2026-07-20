@@ -1,6 +1,7 @@
 //@ts-nocheck
 const ASSISTANT_NAME = "Shinda-ai";
 
+
 // --- UPDATED MODEL CONFIGURATION (2026 Active Free Lineup) ---
 const FREE_MODELS = [
   "openrouter/free",
@@ -9,9 +10,11 @@ const FREE_MODELS = [
   "qwen/qwen-2.5-72b-instruct"
 ];
 
+
 const DEBATE_MODEL_A = "meta-llama/llama-3.3-70b-instruct";
 const DEBATE_MODEL_B = "google/gemma-2-9b-it";
 const JUDGE_MODEL = "openrouter/free";
+
 
 const REQUEST_TIMEOUT_MS = 20000;
 const MAX_HISTORY_MESSAGES = 20;
@@ -20,6 +23,7 @@ const MAX_BACKOFF_MS = 6000;
 let TYPEWRITER_MS_PER_WORD = 40;
 let currentSpeechRate = 1.0;
 const CURSOR_CHAR = "▋";
+
 
 const UI_STRINGS = {
   en: {
@@ -38,6 +42,7 @@ const UI_STRINGS = {
   }
 };
 
+
 // DOM Elements
 const textDisplay = document.getElementById("textToConvert");
 const micBtn = document.getElementById("micBtn");
@@ -47,9 +52,11 @@ const settingsError = document.getElementById("settingsError");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
 
+
 // Speech APIs
 const speechSynth = window.speechSynthesis || null;
 let recognition = null;
+
 
 // State
 const conversationHistory = [];
@@ -60,6 +67,7 @@ let thinkingLoaderEl = null;
 let isSpeaking = false;
 let isFirstMessage = true;
 
+
 // Storage
 const STORAGE_KEYS = {
   API_KEYS: "shindaai_api_keys",
@@ -67,11 +75,14 @@ const STORAGE_KEYS = {
   THEME_COLOR: "shindaai_theme_color"
 };
 
+
 let apiKeys = [];
 let activeKeyIndex = 0;
 let OPENROUTER_API_KEY = "";
 
+
 // --- HELPER FUNCTIONS ---
+
 
 function showError(msg, scope = "chat") {
   console.error(msg);
@@ -79,6 +90,7 @@ function showError(msg, scope = "chat") {
   if (target) target.textContent = msg;
   setStatus("error");
 }
+
 
 function setStatus(state, customText) {
   if (statusDot && statusText) {
@@ -88,21 +100,25 @@ function setStatus(state, customText) {
   }
 }
 
+
 function clearErrors() {
   if (errorPara) errorPara.textContent = "";
   if (settingsError) settingsError.textContent = "";
   setStatus("ready");
 }
 
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
 
 function detectLanguage(text) {
   const frenchAccents = /[àâäéèêëîïôöùûüçœ]/i;
   const frenchWords = /\b(le|la|les|un|une|des|je|tu|il|elle|nous|vous|ils|elles|est|suis|es|sommes|êtes|sont|bonjour|salut|merci|s'il|pourquoi|comment|où|quand|avec|pour|dans|sur|mais|donc|très|voici|voilà|qu'est|quoi|combien)\b/i;
   return (frenchAccents.test(text) || frenchWords.test(text)) ? "fr" : "en";
 }
+
 
 function setLanguage(lang) {
   currentLang = lang === "fr" ? "fr" : "en";
@@ -111,11 +127,13 @@ function setLanguage(lang) {
   }
 }
 
+
 function resetMicButton() {
   if (!micBtn) return;
   micBtn.textContent = UI_STRINGS[currentLang].idle;
   micBtn.classList.remove('listening');
 }
+
 
 function stopEverything() {
   if (speechSynth) speechSynth.cancel();
@@ -127,13 +145,16 @@ function stopEverything() {
   resetMicButton();
 }
 
+
 function trimHistory() {
   while (conversationHistory.length > MAX_HISTORY_MESSAGES) conversationHistory.shift();
 }
 
+
 function setDisplay(text) {
   if (textDisplay) textDisplay.value = text;
 }
+
 
 function setDisplayWithFade(text) {
   if (!textDisplay) return;
@@ -143,14 +164,17 @@ function setDisplayWithFade(text) {
   textDisplay.classList.add("paragraph-enter");
 }
 
+
 function refreshVoices() {
   availableVoices = speechSynth?.getVoices() || [];
 }
+
 
 function pickVoiceForLang(langTag) {
   if (!availableVoices.length) return null;
   return availableVoices.find(v => v.lang?.toLowerCase().startsWith(langTag.toLowerCase())) || availableVoices[0] || null;
 }
+
 
 function ensureThinkingLoader() {
   if (thinkingLoaderEl) return thinkingLoaderEl;
@@ -163,6 +187,7 @@ function ensureThinkingLoader() {
   return el;
 }
 
+
 function showThinking(customText) {
   const el = ensureThinkingLoader();
   el.style.display = "flex";
@@ -170,17 +195,21 @@ function showThinking(customText) {
   setStatus(customText ? undefined : "processing", customText);
 }
 
+
 function hideThinking() {
   if (!thinkingLoaderEl) return;
   thinkingLoaderEl.style.display = "none";
   if (textDisplay) textDisplay.classList.remove("is-thinking");
 }
 
+
 // --- API KEY FUNCTIONS ---
+
 
 function isOpenRouterKeyFormat(key) {
   return /^sk-or-[a-zA-Z0-9-_]+$/.test(key);
 }
+
 
 async function verifyOpenRouterKey(key) {
   if (!isOpenRouterKeyFormat(key)) {
@@ -196,6 +225,7 @@ async function verifyOpenRouterKey(key) {
     });
     clearTimeout(timeoutId);
 
+
     if (response.status === 401) {
       return { valid: false, reason: "Clé refusée par OpenRouter (invalide ou expirée)." };
     }
@@ -210,6 +240,7 @@ async function verifyOpenRouterKey(key) {
     return { valid: false, reason: "Impossible de contacter OpenRouter pour vérifier la clé." };
   }
 }
+
 
 function renderKeysList() {
   const list = document.getElementById('keysList');
@@ -231,12 +262,14 @@ function renderKeysList() {
   });
 }
 
+
 window.setActiveKey = function(index) {
   activeKeyIndex = index;
   OPENROUTER_API_KEY = apiKeys[index];
   saveKeysToStorage();
   renderKeysList();
 };
+
 
 window.deleteKey = function(index) {
   apiKeys.splice(index, 1);
@@ -247,14 +280,17 @@ window.deleteKey = function(index) {
   renderKeysList();
 };
 
+
 function initStorage() {
   try {
     const storedKeys = localStorage.getItem(STORAGE_KEYS.API_KEYS);
     apiKeys = storedKeys ? JSON.parse(storedKeys) : [];
 
+
     const storedIndex = localStorage.getItem(STORAGE_KEYS.ACTIVE_KEY_INDEX);
     activeKeyIndex = storedIndex ? parseInt(storedIndex, 10) : 0;
     if (activeKeyIndex >= apiKeys.length) activeKeyIndex = 0;
+
 
     const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME_COLOR);
     if (storedTheme) {
@@ -262,6 +298,7 @@ function initStorage() {
       const themePicker = document.getElementById("themePicker");
       if (themePicker) themePicker.value = storedTheme;
     }
+
 
     if (apiKeys.length > 0) {
       OPENROUTER_API_KEY = apiKeys[activeKeyIndex];
@@ -275,6 +312,7 @@ function initStorage() {
   }
 }
 
+
 function saveKeysToStorage() {
   try {
     localStorage.setItem(STORAGE_KEYS.API_KEYS, JSON.stringify(apiKeys));
@@ -284,12 +322,15 @@ function saveKeysToStorage() {
   }
 }
 
+
 // --- THEME FUNCTIONS ---
+
 
 const THEME_DIRECTIVE_RE = /\[\[\s*THEME\s*:\s*([^\]]+?)\s*\]\]/i;
 const SPEED_DIRECTIVE_RE = /\[\[\s*SPEED\s*:\s*(slow|normal|fast)\s*\]\]/i;
 const OPEN_SITE_DIRECTIVE_RE = /\[\[\s*OPEN\s*:\s*([^\]]+?)\s*\]\]/i;
 const SEARCH_LINK_DIRECTIVE_RE = /\[\[\s*SEARCHLINK\s*:\s*([^\]]+?)\s*\]\]/i;
+
 
 function isValidCssColor(value) {
   const probe = new Option().style;
@@ -297,6 +338,7 @@ function isValidCssColor(value) {
   probe.color = value;
   return probe.color !== "";
 }
+
 
 function applyThemeColor(rawColor, persist = true) {
   const color = rawColor.trim().toLowerCase();
@@ -325,6 +367,7 @@ function applyThemeColor(rawColor, persist = true) {
   return true;
 }
 
+
 function extractAndApplyTheme(reply) {
   const match = reply.match(THEME_DIRECTIVE_RE);
   if (!match) return reply;
@@ -332,9 +375,11 @@ function extractAndApplyTheme(reply) {
   return reply.replace(THEME_DIRECTIVE_RE, "").trim();
 }
 
+
 function extractAndApplySpeed(reply) {
   const match = reply.match(SPEED_DIRECTIVE_RE);
   if (!match) return reply;
+
 
   const speedParam = match[1].toLowerCase();
   if (speedParam === 'slow') {
@@ -348,8 +393,10 @@ function extractAndApplySpeed(reply) {
     TYPEWRITER_MS_PER_WORD = 40;
   }
 
+
   return reply.replace(SPEED_DIRECTIVE_RE, "").trim();
 }
+
 
 function normalizeUrl(raw) {
   let url = raw.trim();
@@ -363,6 +410,7 @@ function normalizeUrl(raw) {
   return url;
 }
 
+
 function extractAndOpenSite(reply) {
   const match = reply.match(OPEN_SITE_DIRECTIVE_RE);
   if (!match) return reply;
@@ -370,6 +418,7 @@ function extractAndOpenSite(reply) {
   window.open(url, "_blank", "noopener,noreferrer");
   return reply.replace(OPEN_SITE_DIRECTIVE_RE, "").trim();
 }
+
 
 function extractSearchLink(reply) {
   const match = reply.match(SEARCH_LINK_DIRECTIVE_RE);
@@ -385,6 +434,7 @@ function extractSearchLink(reply) {
   };
 }
 
+
 function renderClickableLink(link) {
   if (!link) return;
   let linkContainer = document.getElementById("aiSearchLink");
@@ -398,28 +448,40 @@ function renderClickableLink(link) {
   linkContainer.innerHTML = `<a href="${link.url}" target="_blank" rel="noopener noreferrer" style="color: var(--accent-2); text-decoration: underline; font-size: 0.9rem;">🔗 ${link.label}</a>`;
 }
 
+
 function clearClickableLink() {
   const linkContainer = document.getElementById("aiSearchLink");
   if (linkContainer) linkContainer.innerHTML = "";
 }
 
+
 function splitIntoParagraphs(text) {
-  let paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  // Split on one or more blank lines
+  let paragraphs = text
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  // Fallback: if only 1 big block, split on sentences
   if (paragraphs.length <= 1) {
-    const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) || [text];
-    if (sentences.length > 3) {
+    const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g);
+    if (sentences && sentences.length > 2) {
       paragraphs = [];
       for (let i = 0; i < sentences.length; i += 2) {
-        paragraphs.push(sentences.slice(i, i + 2).join("").trim());
+        const para = sentences.slice(i, i + 2).join(" ").trim();
+        if (para) paragraphs.push(para);
       }
     } else {
       paragraphs = [text.trim()];
     }
   }
+
   return paragraphs;
 }
 
+
 // --- API CALLING FUNCTIONS (ENHANCED) ---
+
 
 async function callModel(model, messages, apiKey) {
   if (!apiKey) {
@@ -492,6 +554,7 @@ async function callModel(model, messages, apiKey) {
   }
 }
 
+
 async function callModelWithFallback(messages, keyCandidates) {
   let lastError = null;
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -516,6 +579,7 @@ async function callModelWithFallback(messages, keyCandidates) {
   throw lastError || new Error("All models failed.");
 }
 
+
 function buildSystemMessage(languageName) {
   return {
     role: "system",
@@ -523,23 +587,29 @@ function buildSystemMessage(languageName) {
   };
 }
 
+
 async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
   const systemMessage = buildSystemMessage(languageName);
   const messages = [systemMessage, { role: "user", content: userText }];
 
+
   showThinking(UI_STRINGS[currentLang].debating);
+
 
   const [replyA, replyB] = await Promise.allSettled([
     callModel(DEBATE_MODEL_A, messages, keyCandidates[0]),
     callModel(DEBATE_MODEL_B, messages, keyCandidates[0])
   ]);
 
+
   const candidateA = replyA.status === "fulfilled" ? replyA.value : null;
   const candidateB = replyB.status === "fulfilled" ? replyB.value : null;
+
 
   if (candidateA && !candidateB) return candidateA;
   if (candidateB && !candidateA) return candidateB;
   if (!candidateA && !candidateB) throw new Error("Both debating models failed.");
+
 
   const judgeMessages = [
     {
@@ -552,6 +622,7 @@ async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
     }
   ];
 
+
   try {
     const judged = await callModel(JUDGE_MODEL, judgeMessages, keyCandidates[0]);
     return judged;
@@ -560,6 +631,7 @@ async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
     return candidateA || candidateB;
   }
 }
+
 
 async function fetchAIResponse(userText) {
   if (!OPENROUTER_API_KEY) {
@@ -571,15 +643,19 @@ async function fetchAIResponse(userText) {
   trimHistory();
   const languageName = currentLang === "fr" ? "French" : "English";
 
+
   setDisplay("");
   clearClickableLink();
   const keyCandidates = [apiKeys[activeKeyIndex], ...apiKeys.filter((_, idx) => idx !== activeKeyIndex)].filter(Boolean);
   if (keyCandidates.length === 0 && OPENROUTER_API_KEY) keyCandidates.push(OPENROUTER_API_KEY);
 
+
   const useDebate = isFirstMessage;
   isFirstMessage = false;
 
+
   showThinking(useDebate ? UI_STRINGS[currentLang].debating : undefined);
+
 
   try {
     let rawReply;
@@ -591,12 +667,15 @@ async function fetchAIResponse(userText) {
       rawReply = await callModelWithFallback(messages, keyCandidates);
     }
 
+
     conversationHistory.push({ role: "assistant", content: rawReply });
     trimHistory();
+
 
     let cleanReply = extractAndApplySpeed(extractAndApplyTheme(rawReply));
     cleanReply = extractAndOpenSite(cleanReply);
     const { text: finalText, link } = extractSearchLink(cleanReply);
+
 
     hideThinking();
     renderClickableLink(link);
@@ -609,84 +688,113 @@ async function fetchAIResponse(userText) {
   }
 }
 
+
+// --- NEW: Paragraph-by-paragraph, word-by-word reveal ---
+
+
 async function speakAndReveal(fullText) {
   const paragraphs = splitIntoParagraphs(fullText);
-  try {
-    if (!speechSynth) {
-      startTypewriterReveal(paragraphs);
-      return;
-    }
-    if (speechSynth.speaking) speechSynth.cancel();
 
-    const utterance = new SpeechSynthesisUtterance(fullText);
-    const ttsLang = currentLang === "fr" ? "fr-FR" : "en-US";
-    utterance.lang = ttsLang;
-    utterance.rate = currentSpeechRate;
+  if (!paragraphs.length) {
+    setDisplay("");
+    return;
+  }
 
-    const matchingVoice = pickVoiceForLang(ttsLang);
-    if (matchingVoice) utterance.voice = matchingVoice;
-    isSpeaking = true;
+  // If TTS not available, just typewriter everything
+  if (!speechSynth) {
+    await runTypewriterParagraphs(paragraphs);
+    return;
+  }
 
-    if (stopBtn) stopBtn.style.display = "block";
+  // Cancel any ongoing speech
+  if (speechSynth.speaking) speechSynth.cancel();
 
-    utterance.onstart = () => {
-      startTypewriterReveal(paragraphs);
-    };
+  const ttsLang = currentLang === "fr" ? "fr-FR" : "en-US";
+  const utterance = new SpeechSynthesisUtterance(fullText);
+  utterance.lang = ttsLang;
+  utterance.rate = currentSpeechRate;
 
-    utterance.onend = () => {
-      isSpeaking = false;
-      if (stopBtn) stopBtn.style.display = "none";
-    };
+  const matchingVoice = pickVoiceForLang(ttsLang);
+  if (matchingVoice) utterance.voice = matchingVoice;
 
-    utterance.onerror = (e) => {
-      isSpeaking = false;
-      if (stopBtn) stopBtn.style.display = "none";
-    };
+  isSpeaking = true;
+  if (stopBtn) stopBtn.style.display = "block";
 
-    speechSynth.speak(utterance);
-  } catch (e) {
-    startTypewriterReveal(paragraphs);
+  // We'll manage showing paragraphs ourselves; TTS just reads full text
+  utterance.onstart = async () => {
+    await runTypewriterParagraphs(paragraphs);
+  };
+
+  utterance.onend = () => {
+    isSpeaking = false;
+    if (stopBtn) stopBtn.style.display = "none";
+  };
+
+  utterance.onerror = () => {
+    isSpeaking = false;
+    if (stopBtn) stopBtn.style.display = "none";
+  };
+
+  speechSynth.speak(utterance);
+}
+
+
+async function runTypewriterParagraphs(paragraphs) {
+  clearInterval(revealIntervalId);
+  revealIntervalId = null;
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    // Clear previous paragraph before starting the new one
+    setDisplay("");
+
+    // Animate this paragraph word-by-word
+    await typewriterParagraph(paragraphs[i]);
+
+    // Optional small pause between paragraphs
+    await sleep(250);
   }
 }
 
-function startTypewriterReveal(paragraphs) {
-  clearInterval(revealIntervalId);
-  let paraIndex = 0;
-  let wordIndex = 0;
-  let currentWords = paragraphs[0]?.split(/\s+/).filter(Boolean) || [];
-  let accumulatedText = "";
 
-  setDisplayWithFade(CURSOR_CHAR);
+function typewriterParagraph(paragraphText) {
+  return new Promise((resolve) => {
+    clearInterval(revealIntervalId);
 
-  revealIntervalId = setInterval(() => {
-    if (!paragraphs[paraIndex]) {
-      clearInterval(revealIntervalId);
-      setDisplay(accumulatedText);
+    const words = paragraphText.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      resolve();
       return;
     }
 
-    wordIndex++;
-    const currentParaPartial = currentWords.slice(0, wordIndex).join(" ");
-    const fullDisplay = accumulatedText + (accumulatedText ? "\n\n" : "") + currentParaPartial;
+    let wordIndex = 0;
+    let displayed = "";
 
-    const isFinal = paraIndex === paragraphs.length - 1 && wordIndex >= currentWords.length;
-    setDisplay(isFinal ? fullDisplay : `${fullDisplay} ${CURSOR_CHAR}`);
+    // Start with cursor
+    setDisplay(CURSOR_CHAR);
 
-    if (wordIndex >= currentWords.length) {
-      accumulatedText += (accumulatedText ? "\n\n" : "") + currentWords.join(" ");
-      paraIndex++;
-      if (paragraphs[paraIndex]) {
-        currentWords = paragraphs[paraIndex].split(/\s+/).filter(Boolean);
-        wordIndex = 0;
-      } else {
+    revealIntervalId = setInterval(() => {
+      if (wordIndex >= words.length) {
         clearInterval(revealIntervalId);
-        setDisplay(accumulatedText);
+        revealIntervalId = null;
+        // Final clean paragraph (no cursor)
+        setDisplay(displayed);
+        resolve();
+        return;
       }
-    }
-  }, TYPEWRITER_MS_PER_WORD);
+
+      const word = words[wordIndex];
+      displayed = (displayed ? displayed + " " : "") + word;
+      wordIndex++;
+
+      // Show current paragraph with cursor
+      setDisplay(displayed + " " + CURSOR_CHAR);
+    }, TYPEWRITER_MS_PER_WORD);
+  });
 }
 
+
 // --- INITIALIZATION ---
+
 
 // Initialize speech recognition
 try {
@@ -697,6 +805,7 @@ try {
     recognition.interimResults = false;
     recognition.lang = currentLang === "fr" ? "fr-FR" : "en-US";
 
+
     recognition.onstart = () => {
       clearErrors();
       if (micBtn) {
@@ -704,6 +813,7 @@ try {
         micBtn.classList.add('listening');
       }
     };
+
 
     recognition.onerror = (event) => {
       const errorCode = event?.error || "unknown";
@@ -715,6 +825,7 @@ try {
       showError(errorMsg);
       resetMicButton();
     };
+
 
     recognition.onresult = async (event) => {
       try {
@@ -733,6 +844,7 @@ try {
       }
     };
 
+
     recognition.onend = () => {
       resetMicButton();
     };
@@ -743,15 +855,18 @@ try {
   showError(`Initialization error: ${e.message}`);
 }
 
+
 // Initialize voices
 if (speechSynth) {
   refreshVoices();
   speechSynth.onvoiceschanged = refreshVoices;
 }
 
+
 // Initialize storage and UI
 initStorage();
 renderKeysList();
+
 
 // Event listeners for tabs
 document.getElementById('tabChatBtn')?.addEventListener('click', (e) => {
@@ -761,6 +876,7 @@ document.getElementById('tabChatBtn')?.addEventListener('click', (e) => {
   document.getElementById('settingsScreen').classList.remove('active');
 });
 
+
 document.getElementById('tabSettingsBtn')?.addEventListener('click', (e) => {
   e.target.classList.add('active');
   document.getElementById('tabChatBtn').classList.remove('active');
@@ -768,6 +884,7 @@ document.getElementById('tabSettingsBtn')?.addEventListener('click', (e) => {
   document.getElementById('chatScreen').classList.remove('active');
   renderKeysList();
 });
+
 
 // Add API key button
 document.getElementById('addKeyBtn')?.addEventListener('click', async () => {
@@ -779,20 +896,25 @@ document.getElementById('addKeyBtn')?.addEventListener('click', async () => {
     return;
   }
 
+
   const addBtn = document.getElementById('addKeyBtn');
   const originalText = addBtn.textContent;
   addBtn.textContent = "Vérification...";
   addBtn.disabled = true;
 
+
   const verifyResult = await verifyOpenRouterKey(val);
+
 
   addBtn.textContent = originalText;
   addBtn.disabled = false;
+
 
   if (!verifyResult.valid) {
     showError(verifyResult.reason, "settings");
     return;
   }
+
 
   apiKeys.push(val);
   activeKeyIndex = apiKeys.length - 1;
@@ -803,16 +925,19 @@ document.getElementById('addKeyBtn')?.addEventListener('click', async () => {
   settingsError.textContent = "";
 });
 
+
 // Theme picker
 document.getElementById('themePicker')?.addEventListener('input', (e) => {
   applyThemeColor(e.target.value, true);
 });
+
 
 document.getElementById('resetThemeBtn')?.addEventListener('click', () => {
   applyThemeColor('reset', true);
   const themePicker = document.getElementById('themePicker');
   if (themePicker) themePicker.value = '#f4244c';
 });
+
 
 // Microphone button
 micBtn?.addEventListener('click', async () => {
@@ -835,6 +960,7 @@ micBtn?.addEventListener('click', async () => {
     showError(`Mic error: ${e.message}`);
   }
 });
+
 
 // Stop button
 stopBtn?.addEventListener('click', () => {
