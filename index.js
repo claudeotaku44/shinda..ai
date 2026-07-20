@@ -1,20 +1,17 @@
 //@ts-nocheck
 const ASSISTANT_NAME = "Shinda-ai";
 
+// --- UPDATED MODEL CONFIGURATION (2026 Active Free Lineup) ---
 const FREE_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemma-4-31b-it:free",
-  "openai/gpt-oss-20b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "qwen/qwen3-coder:free",
-  "openai/gpt-oss-120b:free",
-  "openrouter/free"
+  "openrouter/free",
+  "meta-llama/llama-3.3-70b-instruct",
+  "google/gemma-2-9b-it",
+  "qwen/qwen-2.5-72b-instruct"
 ];
 
-// Les 2 modèles utilisés pour le débat (garde la meilleure réponse)
-const DEBATE_MODEL_A = "meta-llama/llama-3.3-70b-instruct:free";
-const DEBATE_MODEL_B = "openai/gpt-oss-120b:free";
-const JUDGE_MODEL = "qwen/qwen3-coder:free";
+const DEBATE_MODEL_A = "meta-llama/llama-3.3-70b-instruct";
+const DEBATE_MODEL_B = "google/gemma-2-9b-it";
+const JUDGE_MODEL = "openrouter/free";
 
 const REQUEST_TIMEOUT_MS = 20000;
 const MAX_HISTORY_MESSAGES = 20;
@@ -41,6 +38,7 @@ const UI_STRINGS = {
   }
 };
 
+// DOM Elements
 const textDisplay = document.getElementById("textToConvert");
 const micBtn = document.getElementById("micBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -49,16 +47,20 @@ const settingsError = document.getElementById("settingsError");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
 
+// Speech APIs
 const speechSynth = window.speechSynthesis || null;
 let recognition = null;
+
+// State
 const conversationHistory = [];
 let revealIntervalId = null;
 let currentLang = "en";
 let availableVoices = [];
 let thinkingLoaderEl = null;
 let isSpeaking = false;
-let isFirstMessage = true; // déclenche le débat au 1er message de la conversation
+let isFirstMessage = true;
 
+// Storage
 const STORAGE_KEYS = {
   API_KEYS: "shindaai_api_keys",
   ACTIVE_KEY_INDEX: "shindaai_active_key_index",
@@ -69,69 +71,114 @@ let apiKeys = [];
 let activeKeyIndex = 0;
 let OPENROUTER_API_KEY = "";
 
-// --- UI EVENT LISTENERS ---
+// --- HELPER FUNCTIONS ---
 
-document.getElementById('tabChatBtn')?.addEventListener('click', (e) => {
-  e.target.classList.add('active');
-  document.getElementById('tabSettingsBtn').classList.remove('active');
-  document.getElementById('chatScreen').classList.add('active');
-  document.getElementById('settingsScreen').classList.remove('active');
-});
+function showError(msg, scope = "chat") {
+  console.error(msg);
+  const target = scope === "chat" ? errorPara : settingsError;
+  if (target) target.textContent = msg;
+  setStatus("error");
+}
 
-document.getElementById('tabSettingsBtn')?.addEventListener('click', (e) => {
-  e.target.classList.add('active');
-  document.getElementById('tabChatBtn').classList.remove('active');
-  document.getElementById('settingsScreen').classList.add('active');
-  document.getElementById('chatScreen').classList.remove('active');
-  renderKeysList();
-});
-
-document.getElementById('addKeyBtn')?.addEventListener('click', async () => {
-  const input = document.getElementById('newApiKey');
-  const val = input.value.trim();
-  if (!val) return;
-  if (apiKeys.includes(val)) {
-    showError("Cette clé existe déjà.", "settings");
-    return;
+function setStatus(state, customText) {
+  if (statusDot && statusText) {
+    const strings = UI_STRINGS[currentLang];
+    statusDot.className = "status-dot" + (state === "error" ? " error" : "");
+    statusText.textContent = customText || strings[state] || strings.ready;
   }
+}
 
-  const addBtn = document.getElementById('addKeyBtn');
-  const originalText = addBtn.textContent;
-  addBtn.textContent = "Vérification...";
-  addBtn.disabled = true;
+function clearErrors() {
+  if (errorPara) errorPara.textContent = "";
+  if (settingsError) settingsError.textContent = "";
+  setStatus("ready");
+}
 
-  const verifyResult = await verifyOpenRouterKey(val);
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-  addBtn.textContent = originalText;
-  addBtn.disabled = false;
+function detectLanguage(text) {
+  const frenchAccents = /[àâäéèêëîïôöùûüçœ]/i;
+  const frenchWords = /\b(le|la|les|un|une|des|je|tu|il|elle|nous|vous|ils|elles|est|suis|es|sommes|êtes|sont|bonjour|salut|merci|s'il|pourquoi|comment|où|quand|avec|pour|dans|sur|mais|donc|très|voici|voilà|qu'est|quoi|combien)\b/i;
+  return (frenchAccents.test(text) || frenchWords.test(text)) ? "fr" : "en";
+}
 
-  if (!verifyResult.valid) {
-    showError(verifyResult.reason, "settings");
-    return;
+function setLanguage(lang) {
+  currentLang = lang === "fr" ? "fr" : "en";
+  if (recognition) {
+    recognition.lang = currentLang === "fr" ? "fr-FR" : "en-US";
   }
+}
 
-  apiKeys.push(val);
-  activeKeyIndex = apiKeys.length - 1;
-  OPENROUTER_API_KEY = val;
-  saveKeysToStorage();
-  renderKeysList();
-  input.value = '';
-  settingsError.textContent = "";
-});
+function resetMicButton() {
+  if (!micBtn) return;
+  micBtn.textContent = UI_STRINGS[currentLang].idle;
+  micBtn.classList.remove('listening');
+}
 
-document.getElementById('themePicker')?.addEventListener('input', (e) => {
-  applyThemeColor(e.target.value, true);
-});
+function stopEverything() {
+  if (speechSynth) speechSynth.cancel();
+  hideThinking();
+  clearInterval(revealIntervalId);
+  revealIntervalId = null;
+  isSpeaking = false;
+  if (stopBtn) stopBtn.style.display = "none";
+  resetMicButton();
+}
 
-document.getElementById('resetThemeBtn')?.addEventListener('click', () => {
-  applyThemeColor('reset', true);
-  document.getElementById('themePicker').value = '#f4244c';
-});
+function trimHistory() {
+  while (conversationHistory.length > MAX_HISTORY_MESSAGES) conversationHistory.shift();
+}
 
-// --- API KEY VERIFICATION (OpenRouter only) ---
+function setDisplay(text) {
+  if (textDisplay) textDisplay.value = text;
+}
+
+function setDisplayWithFade(text) {
+  if (!textDisplay) return;
+  textDisplay.value = text;
+  textDisplay.classList.remove("paragraph-enter");
+  void textDisplay.offsetWidth;
+  textDisplay.classList.add("paragraph-enter");
+}
+
+function refreshVoices() {
+  availableVoices = speechSynth?.getVoices() || [];
+}
+
+function pickVoiceForLang(langTag) {
+  if (!availableVoices.length) return null;
+  return availableVoices.find(v => v.lang?.toLowerCase().startsWith(langTag.toLowerCase())) || availableVoices[0] || null;
+}
+
+function ensureThinkingLoader() {
+  if (thinkingLoaderEl) return thinkingLoaderEl;
+  const el = document.createElement("div");
+  el.className = "thinking-loader";
+  el.innerHTML = `<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>`;
+  el.style.display = "none";
+  textDisplay?.insertAdjacentElement("afterend", el);
+  thinkingLoaderEl = el;
+  return el;
+}
+
+function showThinking(customText) {
+  const el = ensureThinkingLoader();
+  el.style.display = "flex";
+  if (textDisplay) textDisplay.classList.add("is-thinking");
+  setStatus(customText ? undefined : "processing", customText);
+}
+
+function hideThinking() {
+  if (!thinkingLoaderEl) return;
+  thinkingLoaderEl.style.display = "none";
+  if (textDisplay) textDisplay.classList.remove("is-thinking");
+}
+
+// --- API KEY FUNCTIONS ---
 
 function isOpenRouterKeyFormat(key) {
-  // Les clés OpenRouter commencent toujours par "sk-or-"
   return /^sk-or-[a-zA-Z0-9-_]+$/.test(key);
 }
 
@@ -219,6 +266,10 @@ function initStorage() {
     if (apiKeys.length > 0) {
       OPENROUTER_API_KEY = apiKeys[activeKeyIndex];
     }
+    
+    console.log("🔑 API Key loaded:", OPENROUTER_API_KEY ? "Yes (starts with " + OPENROUTER_API_KEY.substring(0, 10) + "...)" : "No");
+    console.log("📦 Available keys:", apiKeys.length);
+    
   } catch (e) {
     console.error("Storage init failed:", e);
   }
@@ -233,93 +284,7 @@ function saveKeysToStorage() {
   }
 }
 
-function showError(msg, scope = "chat") {
-  console.error(msg);
-  const target = scope === "chat" ? errorPara : settingsError;
-  if (target) target.textContent = msg;
-  setStatus("error");
-}
-
-function clearErrors() {
-  if (errorPara) errorPara.textContent = "";
-  if (settingsError) settingsError.textContent = "";
-  setStatus("ready");
-}
-
-function setStatus(state, customText) {
-  if (statusDot && statusText) {
-    const strings = UI_STRINGS[currentLang];
-    statusDot.className = "status-dot" + (state === "error" ? " error" : "");
-    statusText.textContent = customText || strings[state] || strings.ready;
-  }
-}
-
-function setDisplay(text) {
-  if (textDisplay) textDisplay.value = text;
-}
-
-function setDisplayWithFade(text) {
-  if (!textDisplay) return;
-  textDisplay.value = text;
-  textDisplay.classList.remove("paragraph-enter");
-  void textDisplay.offsetWidth;
-  textDisplay.classList.add("paragraph-enter");
-}
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function detectLanguage(text) {
-  const frenchAccents = /[àâäéèêëîïôöùûüçœ]/i;
-  const frenchWords = /\b(le|la|les|un|une|des|je|tu|il|elle|nous|vous|ils|elles|est|suis|es|sommes|êtes|sont|bonjour|salut|merci|s'il|pourquoi|comment|où|quand|avec|pour|dans|sur|mais|donc|très|voici|voilà|qu'est|quoi|combien)\b/i;
-  return (frenchAccents.test(text) || frenchWords.test(text)) ? "fr" : "en";
-}
-
-function setLanguage(lang) {
-  currentLang = lang === "fr" ? "fr" : "en";
-  if (recognition) {
-    recognition.lang = currentLang === "fr" ? "fr-FR" : "en-US";
-  }
-}
-
-function refreshVoices() {
-  availableVoices = speechSynth?.getVoices() || [];
-}
-
-if (speechSynth) {
-  refreshVoices();
-  speechSynth.onvoiceschanged = refreshVoices;
-}
-
-function pickVoiceForLang(langTag) {
-  if (!availableVoices.length) return null;
-  return availableVoices.find(v => v.lang?.toLowerCase().startsWith(langTag.toLowerCase())) || availableVoices[0] || null;
-}
-
-function ensureThinkingLoader() {
-  if (thinkingLoaderEl) return thinkingLoaderEl;
-  const el = document.createElement("div");
-  el.className = "thinking-loader";
-  el.innerHTML = `<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>`;
-  el.style.display = "none";
-  textDisplay?.insertAdjacentElement("afterend", el);
-  thinkingLoaderEl = el;
-  return el;
-}
-
-function showThinking(customText) {
-  const el = ensureThinkingLoader();
-  el.style.display = "flex";
-  if (textDisplay) textDisplay.classList.add("is-thinking");
-  setStatus(customText ? undefined : "processing", customText);
-}
-
-function hideThinking() {
-  if (!thinkingLoaderEl) return;
-  thinkingLoaderEl.style.display = "none";
-  if (textDisplay) textDisplay.classList.remove("is-thinking");
-}
+// --- THEME FUNCTIONS ---
 
 const THEME_DIRECTIVE_RE = /\[\[\s*THEME\s*:\s*([^\]]+?)\s*\]\]/i;
 const SPEED_DIRECTIVE_RE = /\[\[\s*SPEED\s*:\s*(slow|normal|fast)\s*\]\]/i;
@@ -386,15 +351,12 @@ function extractAndApplySpeed(reply) {
   return reply.replace(SPEED_DIRECTIVE_RE, "").trim();
 }
 
-// --- Ouvrir un site web ---
 function normalizeUrl(raw) {
   let url = raw.trim();
   if (!/^https?:\/\//i.test(url)) {
-    // Si ça ressemble à un domaine (contient un point, pas d'espace), on ajoute https://
     if (/^[\w-]+(\.[\w-]+)+/.test(url) && !/\s/.test(url)) {
       url = "https://" + url;
     } else {
-      // Sinon on traite ça comme une recherche Google
       url = "https://www.google.com/search?q=" + encodeURIComponent(url);
     }
   }
@@ -409,7 +371,6 @@ function extractAndOpenSite(reply) {
   return reply.replace(OPEN_SITE_DIRECTIVE_RE, "").trim();
 }
 
-// --- Lien de recherche cliquable ---
 function extractSearchLink(reply) {
   const match = reply.match(SEARCH_LINK_DIRECTIVE_RE);
   if (!match) return { text: reply, link: null };
@@ -458,105 +419,19 @@ function splitIntoParagraphs(text) {
   return paragraphs;
 }
 
-try {
-  const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
-  if (SR) {
-    recognition = new SR();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = currentLang === "fr" ? "fr-FR" : "en-US";
-
-    recognition.onstart = () => {
-      clearErrors();
-      if (micBtn) {
-        micBtn.textContent = UI_STRINGS[currentLang].listening;
-        micBtn.classList.add('listening');
-      }
-    };
-
-    recognition.onerror = (event) => {
-      const errorCode = event?.error || "unknown";
-      let errorMsg = "Speech recognition issue. ";
-      if (errorCode === "no-speech") errorMsg += "No speech detected. Try again.";
-      else if (errorCode === "audio-capture") errorMsg += "Microphone access issue.";
-      else if (errorCode === "not-allowed") errorMsg += "Microphone permission denied.";
-      else errorMsg += `Error: ${errorCode}`;
-      showError(errorMsg);
-      resetMicButton();
-    };
-
-    recognition.onresult = async (event) => {
-      try {
-        const userTranscript = event?.results?.[0]?.[0]?.transcript;
-        if (!userTranscript || userTranscript.trim() === "") {
-          showError("Could not capture speech. Please try again.");
-          resetMicButton();
-          return;
-        }
-        setLanguage(detectLanguage(userTranscript));
-        resetMicButton();
-        await fetchAIResponse(userTranscript);
-      } catch (e) {
-        showError(`Error: ${e.message}`);
-        resetMicButton();
-      }
-    };
-
-    recognition.onend = () => {
-      resetMicButton();
-    };
-  } else {
-    showError("Speech Recognition not supported. Try Google Chrome.");
-  }
-} catch (e) {
-  showError(`Initialization error: ${e.message}`);
-}
-
-function resetMicButton() {
-  if (!micBtn) return;
-  micBtn.textContent = UI_STRINGS[currentLang].idle;
-  micBtn.classList.remove('listening');
-}
-
-micBtn?.addEventListener('click', async () => {
-  try {
-    if (!OPENROUTER_API_KEY) {
-      showError("Add your OpenRouter API key in Settings.");
-      return;
-    }
-    if (!recognition) {
-      showError("Speech recognition not supported.");
-      return;
-    }
-    if (!navigator.onLine) {
-      showError("You appear to be offline.");
-      return;
-    }
-    stopEverything();
-    try { recognition.start(); } catch (e) { try { recognition.stop(); } catch {} }
-  } catch (e) {
-    showError(`Mic error: ${e.message}`);
-  }
-});
-
-function stopEverything() {
-  if (speechSynth) speechSynth.cancel();
-  hideThinking();
-  clearInterval(revealIntervalId);
-  revealIntervalId = null;
-  isSpeaking = false;
-  if (stopBtn) stopBtn.style.display = "none";
-  resetMicButton();
-}
-
-stopBtn?.addEventListener('click', () => {
-  try { stopEverything(); } catch (e) { showError(`Stop error: ${e.message}`); }
-});
+// --- API CALLING FUNCTIONS (ENHANCED) ---
 
 async function callModel(model, messages, apiKey) {
+  if (!apiKey) {
+    throw new Error("No API key provided");
+  }
+  
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  
   try {
+    console.log(`📡 Calling model: ${model}`);
+    
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -565,31 +440,58 @@ async function callModel(model, messages, apiKey) {
         "HTTP-Referer": window.location.href || "http://localhost",
         "X-Title": "Voice AI Assistant"
       },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ 
+        model, 
+        messages,
+        stream: false
+      }),
       signal: controller.signal
     });
+    
+    console.log(`📊 Response status: ${response.status}`);
+    
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      const err = new Error(`Model ${model} error: ${response.status}`);
+      const errorText = await response.text().catch(() => "No error details");
+      console.error(`❌ API Error ${response.status}:`, errorText);
+      
+      const err = new Error(`Model ${model} error: ${response.status} - ${errorText}`);
       err.status = response.status;
-      if (response.status === 429) {
+      
+      if (response.status === 401) {
+        err.message = "Invalid or expired API key. Check your OpenRouter key in Settings.";
+      } else if (response.status === 404) {
+        err.message = `Model '${model}' not found or unavailable. Try another model.`;
+      } else if (response.status === 429) {
         const headerRetry = Number(response.headers.get("Retry-After"));
         let bodyRetry;
         try { bodyRetry = JSON.parse(errorText)?.error?.metadata?.retry_after_seconds; } catch {}
         err.retryAfterSeconds = headerRetry || bodyRetry || 5;
+        err.message = "Rate limit exceeded. Waiting before retry...";
       }
       throw err;
     }
+    
     const data = await response.json();
     const reply = data?.choices?.[0]?.message?.content;
-    if (!reply) throw new Error("No content in response.");
+    
+    if (!reply) {
+      console.warn("⚠️ No content in response:", data);
+      throw new Error("No content in response.");
+    }
+    
+    console.log(`✅ Got response from ${model}`);
     return reply;
+    
+  } catch (e) {
+    if (e.name === "AbortError") {
+      throw new Error(`Request timeout for model ${model}`);
+    }
+    throw e;
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-// Essaie un modèle sur plusieurs clés/modèles de secours (reprend la logique existante)
 async function callModelWithFallback(messages, keyCandidates) {
   let lastError = null;
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -621,7 +523,6 @@ function buildSystemMessage(languageName) {
   };
 }
 
-// --- Débat entre 2 IA (déclenché au premier message de la conversation) ---
 async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
   const systemMessage = buildSystemMessage(languageName);
   const messages = [systemMessage, { role: "user", content: userText }];
@@ -640,7 +541,6 @@ async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
   if (candidateB && !candidateA) return candidateB;
   if (!candidateA && !candidateB) throw new Error("Both debating models failed.");
 
-  // Un juge tranche et garde/synthétise la meilleure réponse
   const judgeMessages = [
     {
       role: "system",
@@ -656,14 +556,14 @@ async function runDebateAndGetBestReply(userText, languageName, keyCandidates) {
     const judged = await callModel(JUDGE_MODEL, judgeMessages, keyCandidates[0]);
     return judged;
   } catch (e) {
-    // Si le juge échoue, on garde la première réponse valide
+    console.error("Judge model failed, using candidate A:", e.message);
     return candidateA || candidateB;
   }
 }
 
 async function fetchAIResponse(userText) {
   if (!OPENROUTER_API_KEY) {
-    showError("Missing API key.");
+    showError("Missing API key. Add your OpenRouter key in Settings.");
     return;
   }
   const originalHistoryLength = conversationHistory.length;
@@ -704,12 +604,9 @@ async function fetchAIResponse(userText) {
   } catch (e) {
     conversationHistory.length = originalHistoryLength;
     hideThinking();
+    console.error("Fetch AI response error:", e);
     showError(`Connection failed: ${e?.message || "Unknown error"}`);
   }
-}
-
-function trimHistory() {
-  while (conversationHistory.length > MAX_HISTORY_MESSAGES) conversationHistory.shift();
 }
 
 async function speakAndReveal(fullText) {
@@ -789,6 +686,157 @@ function startTypewriterReveal(paragraphs) {
   }, TYPEWRITER_MS_PER_WORD);
 }
 
-// Initialize application storage
+// --- INITIALIZATION ---
+
+// Initialize speech recognition
+try {
+  const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
+  if (SR) {
+    recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = currentLang === "fr" ? "fr-FR" : "en-US";
+
+    recognition.onstart = () => {
+      clearErrors();
+      if (micBtn) {
+        micBtn.textContent = UI_STRINGS[currentLang].listening;
+        micBtn.classList.add('listening');
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const errorCode = event?.error || "unknown";
+      let errorMsg = "Speech recognition issue. ";
+      if (errorCode === "no-speech") errorMsg += "No speech detected. Try again.";
+      else if (errorCode === "audio-capture") errorMsg += "Microphone access issue.";
+      else if (errorCode === "not-allowed") errorMsg += "Microphone permission denied.";
+      else errorMsg += `Error: ${errorCode}`;
+      showError(errorMsg);
+      resetMicButton();
+    };
+
+    recognition.onresult = async (event) => {
+      try {
+        const userTranscript = event?.results?.[0]?.[0]?.transcript;
+        if (!userTranscript || userTranscript.trim() === "") {
+          showError("Could not capture speech. Please try again.");
+          resetMicButton();
+          return;
+        }
+        setLanguage(detectLanguage(userTranscript));
+        resetMicButton();
+        await fetchAIResponse(userTranscript);
+      } catch (e) {
+        showError(`Error: ${e.message}`);
+        resetMicButton();
+      }
+    };
+
+    recognition.onend = () => {
+      resetMicButton();
+    };
+  } else {
+    showError("Speech Recognition not supported. Try Google Chrome.");
+  }
+} catch (e) {
+  showError(`Initialization error: ${e.message}`);
+}
+
+// Initialize voices
+if (speechSynth) {
+  refreshVoices();
+  speechSynth.onvoiceschanged = refreshVoices;
+}
+
+// Initialize storage and UI
 initStorage();
 renderKeysList();
+
+// Event listeners for tabs
+document.getElementById('tabChatBtn')?.addEventListener('click', (e) => {
+  e.target.classList.add('active');
+  document.getElementById('tabSettingsBtn').classList.remove('active');
+  document.getElementById('chatScreen').classList.add('active');
+  document.getElementById('settingsScreen').classList.remove('active');
+});
+
+document.getElementById('tabSettingsBtn')?.addEventListener('click', (e) => {
+  e.target.classList.add('active');
+  document.getElementById('tabChatBtn').classList.remove('active');
+  document.getElementById('settingsScreen').classList.add('active');
+  document.getElementById('chatScreen').classList.remove('active');
+  renderKeysList();
+});
+
+// Add API key button
+document.getElementById('addKeyBtn')?.addEventListener('click', async () => {
+  const input = document.getElementById('newApiKey');
+  const val = input.value.trim();
+  if (!val) return;
+  if (apiKeys.includes(val)) {
+    showError("Cette clé existe déjà.", "settings");
+    return;
+  }
+
+  const addBtn = document.getElementById('addKeyBtn');
+  const originalText = addBtn.textContent;
+  addBtn.textContent = "Vérification...";
+  addBtn.disabled = true;
+
+  const verifyResult = await verifyOpenRouterKey(val);
+
+  addBtn.textContent = originalText;
+  addBtn.disabled = false;
+
+  if (!verifyResult.valid) {
+    showError(verifyResult.reason, "settings");
+    return;
+  }
+
+  apiKeys.push(val);
+  activeKeyIndex = apiKeys.length - 1;
+  OPENROUTER_API_KEY = val;
+  saveKeysToStorage();
+  renderKeysList();
+  input.value = '';
+  settingsError.textContent = "";
+});
+
+// Theme picker
+document.getElementById('themePicker')?.addEventListener('input', (e) => {
+  applyThemeColor(e.target.value, true);
+});
+
+document.getElementById('resetThemeBtn')?.addEventListener('click', () => {
+  applyThemeColor('reset', true);
+  const themePicker = document.getElementById('themePicker');
+  if (themePicker) themePicker.value = '#f4244c';
+});
+
+// Microphone button
+micBtn?.addEventListener('click', async () => {
+  try {
+    if (!OPENROUTER_API_KEY) {
+      showError("Add your OpenRouter API key in Settings.");
+      return;
+    }
+    if (!recognition) {
+      showError("Speech recognition not supported.");
+      return;
+    }
+    if (!navigator.onLine) {
+      showError("You appear to be offline.");
+      return;
+    }
+    stopEverything();
+    try { recognition.start(); } catch (e) { try { recognition.stop(); } catch {} }
+  } catch (e) {
+    showError(`Mic error: ${e.message}`);
+  }
+});
+
+// Stop button
+stopBtn?.addEventListener('click', () => {
+  try { stopEverything(); } catch (e) { showError(`Stop error: ${e.message}`); }
+});
