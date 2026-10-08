@@ -66,6 +66,7 @@ let availableVoices = [];
 let thinkingLoaderEl = null;
 let isSpeaking = false;
 let isFirstMessage = true;
+let isRecognitionActive = false;
 
 
 // Storage
@@ -136,6 +137,10 @@ function resetMicButton() {
 
 
 function stopEverything() {
+  if (recognition && isRecognitionActive) {
+    try { recognition.stop(); } catch {}
+    isRecognitionActive = false;
+  }
   if (speechSynth) speechSynth.cancel();
   hideThinking();
   clearInterval(revealIntervalId);
@@ -264,6 +269,7 @@ function renderKeysList() {
 
 
 window.setActiveKey = function(index) {
+  if (!Number.isInteger(index) || !apiKeys[index]) return;
   activeKeyIndex = index;
   OPENROUTER_API_KEY = apiKeys[index];
   saveKeysToStorage();
@@ -272,10 +278,11 @@ window.setActiveKey = function(index) {
 
 
 window.deleteKey = function(index) {
+  if (!Number.isInteger(index) || !apiKeys[index]) return;
   apiKeys.splice(index, 1);
+  if (index < activeKeyIndex) activeKeyIndex -= 1;
   if (activeKeyIndex >= apiKeys.length) activeKeyIndex = Math.max(0, apiKeys.length - 1);
-  if (apiKeys.length > 0) OPENROUTER_API_KEY = apiKeys[activeKeyIndex];
-  else OPENROUTER_API_KEY = "";
+  OPENROUTER_API_KEY = apiKeys[activeKeyIndex] || "";
   saveKeysToStorage();
   renderKeysList();
 };
@@ -807,6 +814,7 @@ try {
 
 
     recognition.onstart = () => {
+      isRecognitionActive = true;
       clearErrors();
       if (micBtn) {
         micBtn.textContent = UI_STRINGS[currentLang].listening;
@@ -846,6 +854,7 @@ try {
 
 
     recognition.onend = () => {
+      isRecognitionActive = false;
       resetMicButton();
     };
   } else {
@@ -954,8 +963,18 @@ micBtn?.addEventListener('click', async () => {
       showError("You appear to be offline.");
       return;
     }
-    stopEverything();
-    try { recognition.start(); } catch (e) { try { recognition.stop(); } catch {} }
+    if (isRecognitionActive) {
+      stopEverything();
+      return;
+    }
+    clearErrors();
+    try {
+      recognition.start();
+    } catch (e) {
+      isRecognitionActive = false;
+      showError(`Mic error: ${e.message}`);
+      resetMicButton();
+    }
   } catch (e) {
     showError(`Mic error: ${e.message}`);
   }
